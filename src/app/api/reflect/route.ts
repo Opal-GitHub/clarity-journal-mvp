@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(request: Request) {
   try {
@@ -10,60 +15,101 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "raw is required" }, { status: 400 });
     }
 
-    const parts = raw
-      .split(/[\n\u3002\uFF01\uFF1F!?]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const prompt = `
+你是一个擅长把每日反思整理成“成长卡片”的中文 AI 助手。
+请根据用户输入，输出一个 JSON 对象，不要输出多余解释。
 
-    const p1 = parts[0] || "记录了今天发生的事情";
-    const p2 = parts[1] || "意识到自己有一个新的模式";
-    const p3 = parts[2] || "决定明天先做一个更小的动作";
+要求：
+1. 使用中文。
+2. 不要编造用户没写过的事实。
+3. 输出字段必须完整。
+4. slides 必须固定 4 张，type 依次为：done / insight / tomorrow / easter。
+5. 所有文案都必须紧扣用户原文，不能写空泛套话。
+6. 禁止输出这类抽象废话：例如“保留真实进展”“停止被模糊感裹挟”“继续成长”“认真生活”这类没有具体指向的句子。
+7. structured.done 和 slides[0].bullets 必须尽量提取用户真实做过的事情，或用户原文中明确表达的行为/事件。
+8. structured.tomorrow 和 slides[2].bullets 必须是基于用户原文推导出的下一步方向，不能是万能建议。
+9. structured.insight 和 slides[1].quote 必须总结用户原文里的核心认知，不要说空话。
+10. coverTitle、coverSubtitle 要像可分享的反思卡片标题，但仍然必须基于原文，不要标题党。
+11. 如果用户原文信息不足，也要尽量贴近原文表达，不要为了凑字段写泛泛而谈的话。
 
-    const result = {
-      id: `insight_${Date.now()}`,
-      title: title || "今天我重新理解了自己一点",
-      date: new Date().toISOString().slice(0, 10),
-      mood: "grounded",
-      visibility: "private",
-      raw,
-      coverTitle: (title || "今天我重新理解了自己一点").slice(0, 18),
-      coverSubtitle: p2,
-      structured: {
-        done: [p1, "提炼出一条值得保留的事实", "把记录变成可回顾内容"],
-        insight: p2,
-        tomorrow: [p3, "把明天的行动缩小到第一步", "避免给自己过大的起点压力"],
-        tags: ["insight", "journal", "growth"],
-      },
-      slides: [
+JSON 结构如下：
+{
+  "id": "insight_时间戳",
+  "title": "标题",
+  "date": "YYYY-MM-DD",
+  "mood": "情绪词",
+  "visibility": "private",
+  "raw": "原文",
+  "coverTitle": "首图标题",
+  "coverSubtitle": "首图副标题",
+  "structured": {
+    "done": ["已做事项1", "已做事项2"],
+    "insight": "认知总结",
+    "tomorrow": ["明日方向1", "明日方向2"],
+    "tags": ["标签1", "标签2"]
+  },
+  "slides": [
+    {
+      "type": "done",
+      "title": "标题",
+      "subtitle": "副标题",
+      "bullets": ["要点1", "要点2"]
+    },
+    {
+      "type": "insight",
+      "title": "标题",
+      "subtitle": "副标题",
+      "quote": "一句洞察"
+    },
+    {
+      "type": "tomorrow",
+      "title": "标题",
+      "subtitle": "副标题",
+      "bullets": ["要点1", "要点2"]
+    },
+    {
+      "type": "easter",
+      "title": "标题",
+      "subtitle": "副标题",
+      "emoji": "✨"
+    }
+  ]
+}
+
+用户标题：
+${title || "无"}
+
+用户原文：
+${raw}
+`;
+
+    const response = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
         {
-          type: "done",
-          title: "今天发生了什么",
-          subtitle: "先确认事实，再理解自己。",
-          bullets: [p1, "保留真实进展", "停止被模糊感裹挟"],
+          role: "system",
+          content: "你是一个严格按 JSON 输出结果的助手。",
         },
         {
-          type: "insight",
-          title: "我想记住的洞察",
-          subtitle: "把今天最重要的理解留下来。",
-          quote: p2,
-        },
-        {
-          type: "tomorrow",
-          title: "明日最小方向",
-          subtitle: "不是做更多，而是先做得更小。",
-          bullets: [p3, "只选一个起点", "先推进最小闭环"],
-        },
-        {
-          type: "easter",
-          title: "给今天的一个小结尾",
-          subtitle: "哪怕只是多理解自己一点，也值得纪念。",
-          emoji: "🎁",
+          role: "user",
+          content: prompt,
         },
       ],
-    };
+      temperature: 0.7,
+      response_format: { type: "json_object" },
+    });
+
+    const text = response.choices[0]?.message?.content;
+
+    if (!text) {
+      return NextResponse.json({ error: "AI returned empty response" }, { status: 500 });
+    }
+
+    const result = JSON.parse(text);
 
     return NextResponse.json(result);
-  } catch {
-    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "AI generation failed" }, { status: 500 });
   }
 }
