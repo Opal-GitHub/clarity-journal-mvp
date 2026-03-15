@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { BookOpen, Sparkles, ChevronLeft, ChevronRight, Wand2, Compass, Brain, CheckCircle2, Stars, Library, Globe2, Lock, Loader2 } from "lucide-react";
+import { BookOpen, Sparkles, ChevronLeft, ChevronRight, Wand2, Compass, Brain, CheckCircle2, Stars, Library, Globe2, Lock, Loader2, Share2 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 /**
  * 产品级 MVP 方向：
@@ -165,11 +166,11 @@ function BrandHeader() {
         </div>
         <div>
           <div className="text-lg font-semibold tracking-tight">Clarity Journal</div>
-          <div className="text-sm text-zinc-500">Turn reflections into insights you can revisit or share.</div>
+          <div className="text-sm text-zinc-500">把每日反思整理成可回顾、可分享的洞察卡片。</div>
         </div>
       </div>
       <div className="hidden md:flex items-center gap-2 text-sm text-zinc-500">
-        <Badge variant="outline" className="rounded-full">AI Reflection Journal</Badge>
+        <Badge variant="outline" className="rounded-full">AI 反思日志</Badge>
         <Badge variant="secondary" className="rounded-full">Product-style MVP</Badge>
       </div>
     </div>
@@ -399,6 +400,40 @@ function SlideCard({
 
 export default function Page() {
   const [entries, setEntries] = useState(demoEntries);
+  React.useEffect(() => {
+  const loadReflections = async () => {
+    const { data, error } = await supabase
+      .from("reflections")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Failed to load reflections:", error);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const mapped = data.map((item) => ({
+        id: item.id,
+        title: item.title,
+        date: item.created_at?.slice(0, 10) || "",
+        mood: item.mood || "grounded",
+        visibility: item.visibility || "private",
+        raw: item.raw,
+        coverTitle: item.cover_title || item.title,
+        coverSubtitle: item.cover_subtitle || "",
+        structured: item.structured,
+        slides: item.slides,
+      }));
+
+      setEntries(mapped);
+      setSelectedId(mapped[0].id);
+    }
+  };
+
+  loadReflections();
+}, []);
+
   const [title, setTitle] = useState("");
   const [raw, setRaw] = useState("今天发生了什么？你意识到了什么？明天准备怎么做？");
   const [selectedId, setSelectedId] = useState(demoEntries[0].id);
@@ -446,6 +481,33 @@ export default function Page() {
   const prevSlide = () => setSlideIndex((s) => Math.max(0, s - 1));
   const nextSlide = () => setSlideIndex((s) => Math.min(3, s + 1));
 
+  const shareCurrentInsight = async () => {
+
+  const url = `${window.location.origin}/r/${selected.id}`;
+
+  const sharePayload = {
+    title: selected.title,
+    text: selected.structured.insight,
+    url,
+  };
+
+  if (navigator.share) {
+    try {
+      await navigator.share(sharePayload);
+      return;
+    } catch {
+      // 用户取消分享时不处理
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(url);
+    alert("分享链接已复制到剪贴板");
+  } catch {
+    alert(`请手动复制这个链接：${url}`);
+  }
+};
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#ffffff,_#f4f4f5_42%,_#fafafa_100%)] p-4 md:p-8 text-zinc-900">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -459,11 +521,11 @@ export default function Page() {
 
           <Tabs value={view} onValueChange={setView}>
             <TabsList className="rounded-2xl bg-white shadow-sm">
-              <TabsTrigger value="write">Write</TabsTrigger>
-              <TabsTrigger value="feed">Insight Feed</TabsTrigger>
-              <TabsTrigger value="detail">Detail</TabsTrigger>
-              <TabsTrigger value="library">Library</TabsTrigger>
-              <TabsTrigger value="explore">Explore</TabsTrigger>
+              <TabsTrigger value="write">写反思</TabsTrigger>
+              <TabsTrigger value="feed">灵感卡片</TabsTrigger>
+              <TabsTrigger value="detail">详情</TabsTrigger>
+              <TabsTrigger value="library">洞察库</TabsTrigger>
+              <TabsTrigger value="explore">发现</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -585,7 +647,12 @@ export default function Page() {
                     <CardTitle className="mt-4 text-3xl tracking-tight">{selected.title}</CardTitle>
                     <div className="mt-2 text-sm text-zinc-500">{selected.date}</div>
                   </div>
+
                   <div className="flex items-center gap-2">
+                    <Button variant="outline" className="rounded-2xl" onClick={shareCurrentInsight}>
+                      <Share2 className="mr-2 h-4 w-4" />
+                      Share
+                    </Button>
                     <Button variant="outline" className="rounded-2xl" onClick={prevSlide} disabled={slideIndex === 0}>
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
@@ -593,6 +660,7 @@ export default function Page() {
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
+                  
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">

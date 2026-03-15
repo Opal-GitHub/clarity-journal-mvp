@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import {supabase} from "@/lib/supabase";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -105,9 +106,41 @@ ${raw}
       return NextResponse.json({ error: "AI returned empty response" }, { status: 500 });
     }
 
+
+
     const result = JSON.parse(text);
 
-    return NextResponse.json(result);
+const { data: inserted, error: insertError } = await supabase
+  .from("reflections")
+  .insert({
+    id: result.id,
+    title: result.title,
+    raw: result.raw,
+    mood: result.mood,
+    visibility: result.visibility,
+    cover_title: result.coverTitle,
+    cover_subtitle: result.coverSubtitle,
+    structured: result.structured,
+    slides: result.slides,
+  })
+  .select()
+  .single();
+
+if (insertError) {
+  console.error("Supabase insert error:", insertError);
+  return NextResponse.json(
+    { error: `Supabase insert failed: ${insertError.message}` },
+    { status: 500 }
+  );
+}
+
+console.log("Inserted reflection:", inserted.id);
+
+return NextResponse.json(result);
+
+
+
+
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "AI generation failed" }, { status: 500 });
