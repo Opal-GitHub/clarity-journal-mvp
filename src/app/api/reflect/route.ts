@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import {supabase} from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -35,7 +35,6 @@ export async function POST(request: Request) {
 
 JSON 结构如下：
 {
-  "id": "insight_时间戳",
   "title": "标题",
   "date": "YYYY-MM-DD",
   "mood": "情绪词",
@@ -103,46 +102,57 @@ ${raw}
     const text = response.choices[0]?.message?.content;
 
     if (!text) {
-      return NextResponse.json({ error: "AI returned empty response" }, { status: 500 });
+      return NextResponse.json(
+        { error: "AI returned empty response" },
+        { status: 500 }
+      );
     }
-
-
 
     const result = JSON.parse(text);
 
-const { data: inserted, error: insertError } = await supabase
-  .from("reflections")
-  .insert({
-    id: result.id,
-    title: result.title,
-    raw: result.raw,
-    mood: result.mood,
-    visibility: result.visibility,
-    cover_title: result.coverTitle,
-    cover_subtitle: result.coverSubtitle,
-    structured: result.structured,
-    slides: result.slides,
-  })
-  .select()
-  .single();
+    const reflectionId = crypto.randomUUID();
 
-if (insertError) {
-  console.error("Supabase insert error:", insertError);
-  return NextResponse.json(
-    { error: `Supabase insert failed: ${insertError.message}` },
-    { status: 500 }
-  );
-}
+    const reflectionToInsert = {
+      id: reflectionId,
+      title: result.title,
+      raw: result.raw,
+      mood: result.mood,
+      visibility: result.visibility,
+      cover_title: result.coverTitle,
+      cover_subtitle: result.coverSubtitle,
+      structured: result.structured,
+      slides: result.slides,
+    };
 
-console.log("Inserted reflection:", inserted.id);
+    const { data: inserted, error: insertError } = await supabase
+      .from("reflections")
+      .insert(reflectionToInsert)
+      .select()
+      .single();
 
-return NextResponse.json(result);
+    if (insertError) {
+      console.error("Supabase insert error:", {
+        code: insertError.code,
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint,
+        reflectionToInsert,
+      });
 
+      return NextResponse.json(
+        { error: `Supabase insert failed: ${insertError.message}` },
+        { status: 500 }
+      );
+    }
 
+    console.log("Inserted reflection:", inserted.id);
 
-
+    return NextResponse.json({
+      ...result,
+      id: reflectionId,
+    });
   } catch (error) {
-    console.error(error);
+    console.error("Reflect API error:", error);
     return NextResponse.json({ error: "AI generation failed" }, { status: 500 });
   }
 }
